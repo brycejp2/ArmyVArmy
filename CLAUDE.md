@@ -15,7 +15,7 @@ persist between battles.**
 
 ## Engine & conventions
 
-- **Unity 2022.3 LTS**, **2D URP (2D Renderer)**. Input System (touch-first), TextMeshPro,
+- **Unity 6 LTS**, **2D URP (2D Renderer)**. Input System (touch-first), TextMeshPro,
   Cinemachine. C# scripting.
 - **Performance is a first-class constraint.** The battle is a **fixed-tick simulation decoupled from
   rendering**. Units live as **plain data in flat arrays** inside `BattleSimulation` — do **not**

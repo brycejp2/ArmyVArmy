@@ -13,7 +13,7 @@ evolves. `PLAN.md` is the stable reference; this file captures the moving parts.
 | 2026-06-20 | Landscape orientation throughout | Menus and battle. |
 | 2026-06-20 | Unit wounds persist between battles | Makes healing/rest a meaningful spend; reinforces permadeath. |
 | 2026-06-20 | Vertical slice first | Full loop with 3 units before breadth. |
-| 2026-06-20 | Unity 2022.3 LTS + 2D URP (default) | Unity 6 LTS acceptable alternative. |
+| 2026-06-20 | Unity 6 LTS + 2D URP | Chosen engine; Unity 2022.3 LTS is an acceptable fallback. |
 
 ## Open questions (non-blocking)
 - Exact tick rate (20 vs 30 Hz) — decide during Phase 2 profiling.

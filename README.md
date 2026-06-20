@@ -6,7 +6,7 @@ lose a single battle and the run is over (permadeath). Between battles you manag
 units, arrange your starting formation, buy armor/weapon/ability upgrades, apply buffs, and heal
 wounded survivors. Wounds **persist between battles**, so healing is a meaningful spend.
 
-- **Engine:** Unity (2022.3 LTS recommended) — 2D URP
+- **Engine:** Unity 6 LTS — 2D URP
 - **Platforms:** Android first, iOS second — **landscape** orientation
 - **Scale:** real-time auto-battles of **100–300 units per side**
 - **Status:** design complete; **no Unity project committed yet**. Start with the **vertical slice**.

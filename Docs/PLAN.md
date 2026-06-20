@@ -21,8 +21,8 @@ choose which units deploy, arrange the starting formation, buy upgrades, apply b
 
 ## 2. Tech stack
 
-- **Unity 2022.3 LTS**, **2D URP (2D Renderer)** — sprite batching, 2D lights, strong mobile perf.
-  (Unity 6 LTS is acceptable; only the editor version changes.)
+- **Unity 6 LTS**, **2D URP (2D Renderer)** — sprite batching, 2D lights, strong mobile perf.
+  (Unity 2022.3 LTS is an acceptable fallback; only the editor version changes.)
 - **Packages:** Input System (touch-first), TextMeshPro, Cinemachine (battle camera pan/zoom),
   Addressables (optional, content streaming later).
 - **No Unity physics for unit-vs-unit combat** — movement, separation, and targeting run in a custom

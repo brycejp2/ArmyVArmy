@@ -9,7 +9,7 @@ proves the loop is fun and performant. See `PLAN.md` for design/architecture det
 ## Part A — Vertical Slice (ordered build phases)
 
 ### Phase 1 — Project bootstrap
-- Create the Unity 2022.3 LTS project with **2D URP**; add packages (Input System, TextMeshPro,
+- Create the Unity 6 LTS project with **2D URP**; add packages (Input System, TextMeshPro,
   Cinemachine).
 - Initialize **Git LFS**; commit `.gitignore` / `.gitattributes` (already in repo root).
 - Create the `Assets/Scripts/...` folders and three scenes: **MainMenu**, **MetaHub**, **Battle**.
