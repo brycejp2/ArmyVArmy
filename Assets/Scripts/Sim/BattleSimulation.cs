@@ -1,4 +1,5 @@
 using ArmyVArmy.Combat;
+using ArmyVArmy.Data;
 using UnityEngine;
 
 namespace ArmyVArmy.Sim
@@ -16,7 +17,10 @@ namespace ArmyVArmy.Sim
         public readonly float[] AttackRange;
         public readonly float[] AttackInterval;
         public readonly float[] AttackCooldown;
+        public readonly float[] AttackFlashTimer;
         public readonly float[] MoveSpeed;
+        public readonly float[] MinEngageRange;
+        public readonly float[] ProjectileSpeed;
         public readonly int[] Team;
         public readonly int[] TargetIndex;
         public readonly bool[] Alive;
@@ -27,12 +31,15 @@ namespace ArmyVArmy.Sim
         public bool IsFinished { get; private set; }
         public int WinningTeam { get; private set; } = -1;
 
+        public ProjectilePool Projectiles { get; }
+
         readonly SpatialGrid grid;
         readonly Vector2[] teamCentroid = new Vector2[2];
 
         const float SeparationRadius = 0.5f;
         const float SeparationStrength = 2.5f;
         const int RetargetIntervalTicks = 10;
+        const float AttackFlashDuration = 0.2f;
 
         int tickCounter;
 
@@ -47,26 +54,33 @@ namespace ArmyVArmy.Sim
             AttackRange = new float[capacity];
             AttackInterval = new float[capacity];
             AttackCooldown = new float[capacity];
+            AttackFlashTimer = new float[capacity];
             MoveSpeed = new float[capacity];
+            MinEngageRange = new float[capacity];
+            ProjectileSpeed = new float[capacity];
             Team = new int[capacity];
             TargetIndex = new int[capacity];
             Alive = new bool[capacity];
 
             grid = new SpatialGrid(worldWidth, worldHeight, cellSize, worldOriginX, worldOriginY, capacity);
+            Projectiles = new ProjectilePool(256);
         }
 
-        public int SpawnUnit(Vector2 position, int team, float health, float armor, float damage, float range, float attackInterval, float moveSpeed)
+        public int SpawnUnit(Vector2 position, int team, UnitDef def)
         {
             int index = UnitCount;
             Positions[index] = position;
             PrevPositions[index] = position;
-            Health[index] = health;
-            Armor[index] = armor;
-            AttackDamage[index] = damage;
-            AttackRange[index] = range;
-            AttackInterval[index] = attackInterval;
+            Health[index] = def.Health;
+            Armor[index] = def.Armor;
+            AttackDamage[index] = def.Damage;
+            AttackRange[index] = def.AttackRange;
+            AttackInterval[index] = def.AttackInterval;
             AttackCooldown[index] = 0f;
-            MoveSpeed[index] = moveSpeed;
+            AttackFlashTimer[index] = 0f;
+            MoveSpeed[index] = def.MoveSpeed;
+            MinEngageRange[index] = def.MinEngageRange;
+            ProjectileSpeed[index] = def.ProjectileSpeed;
             Team[index] = team;
             TargetIndex[index] = -1;
             Alive[index] = true;
@@ -186,7 +200,11 @@ namespace ArmyVArmy.Sim
                 if (target >= 0)
                 {
                     Vector2 toTarget = Positions[target] - pos;
-                    if (toTarget.magnitude > AttackRange[i])
+                    float distance = toTarget.magnitude;
+
+                    if (distance < MinEngageRange[i])
+                        desired = -toTarget.normalized;
+                    else if (distance > AttackRange[i])
                         desired = toTarget.normalized;
                 }
                 else
@@ -246,22 +264,49 @@ namespace ArmyVArmy.Sim
                 if (AttackCooldown[i] > 0f)
                     AttackCooldown[i] -= dt;
 
+                if (AttackFlashTimer[i] > 0f)
+                    AttackFlashTimer[i] -= dt;
+
                 int target = TargetIndex[i];
                 if (target < 0 || !Alive[target] || AttackCooldown[i] > 0f)
                     continue;
 
-                float range = AttackRange[i];
-                if ((Positions[target] - Positions[i]).sqrMagnitude > range * range)
+                float distance = (Positions[target] - Positions[i]).magnitude;
+                if (distance > AttackRange[i])
                     continue;
 
-                Health[target] -= DamageModel.ResolveMeleeDamage(AttackDamage[i], Armor[target]);
                 AttackCooldown[i] = AttackInterval[i];
+                AttackFlashTimer[i] = AttackFlashDuration;
 
-                if (Health[target] <= 0f && Alive[target])
+                if (ProjectileSpeed[i] > 0f)
                 {
-                    Alive[target] = false;
-                    AliveCountByTeam[Team[target]]--;
+                    Vector2 targetVelocity = dt > 0f ? (Positions[target] - PrevPositions[target]) / dt : Vector2.zero;
+                    float leadTime = distance / ProjectileSpeed[i];
+                    Vector2 aimPoint = Positions[target] + targetVelocity * leadTime;
+                    Projectiles.Spawn(Positions[i], aimPoint, target, AttackDamage[i], ProjectileSpeed[i]);
                 }
+                else
+                {
+                    ApplyDamage(target, AttackDamage[i]);
+                }
+            }
+
+            Projectiles.Tick(dt);
+            foreach (var impact in Projectiles.PendingImpacts)
+            {
+                if (Alive[impact.targetIndex])
+                    ApplyDamage(impact.targetIndex, impact.damage);
+            }
+        }
+
+        void ApplyDamage(int targetIndex, float damageAmount)
+        {
+            Health[targetIndex] -= DamageModel.ResolveDamage(damageAmount, Armor[targetIndex]);
+
+            if (Health[targetIndex] <= 0f && Alive[targetIndex])
+            {
+                Alive[targetIndex] = false;
+                AliveCountByTeam[Team[targetIndex]]--;
             }
         }
 

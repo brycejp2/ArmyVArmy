@@ -6,7 +6,7 @@ namespace ArmyVArmy.Combat
     {
         public const float MinDamage = 1f;
 
-        public static float ResolveMeleeDamage(float attackDamage, float targetArmor)
+        public static float ResolveDamage(float attackDamage, float targetArmor)
         {
             return Mathf.Max(MinDamage, attackDamage - targetArmor);
         }

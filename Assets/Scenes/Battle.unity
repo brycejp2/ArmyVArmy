@@ -284,7 +284,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0aebc213a73ab77448333b0406e513d7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  unitsPerSide: 300
+  swordsmanDef: {fileID: 11400000, guid: 44b6f46eb079da04d94abafc517a715c, type: 2}
+  spearmanDef: {fileID: 11400000, guid: 830ef898d7b365645bdbdfa5fe3b87ac, type: 2}
+  archerDef: {fileID: 11400000, guid: d1c3df917f3162946ae2c90146622b01, type: 2}
+  meleePerTypePerSide: 20
+  archersPerSide: 10
   tickRate: 25
   team0Color: {r: 0.3, g: 0.55, b: 0.95, a: 1}
   team1Color: {r: 0.9, g: 0.35, b: 0.3, a: 1}
