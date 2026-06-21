@@ -10,6 +10,8 @@ namespace ArmyVArmy.Sim
     // behavior (ranged kite, melee close, spears hold) is easy to watch.
     public class BattleSimulationRunner : MonoBehaviour
     {
+        public const int PlayerTeam = 0;
+
         [SerializeField] UnitDef swordsmanDef;
         [SerializeField] UnitDef spearmanDef;
         [SerializeField] UnitDef archerDef;
@@ -38,6 +40,18 @@ namespace ArmyVArmy.Sim
         Camera cam;
         float tickInterval;
         float accumulator;
+
+        public Camera BattleCamera => cam;
+        public float TimeScale { get; set; } = 1f;
+
+        public bool TryCastAbility(AbilityDef ability, Vector2 worldPosition) =>
+            sim.TryCastAbility(ability, worldPosition, PlayerTeam);
+
+        public void IssueCommand(CommandDef command) => sim.IssueCommand(PlayerTeam, command);
+
+        public float GetAbilityCooldownRemaining(AbilityDef ability) => sim.GetAbilityCooldownRemaining(ability);
+
+        public bool IsCommandActive(CommandDef command) => sim.IsCommandActive(PlayerTeam, command);
 
         void Start()
         {
@@ -116,7 +130,7 @@ namespace ArmyVArmy.Sim
 
         void Update()
         {
-            accumulator += Time.deltaTime;
+            accumulator += Time.deltaTime * TimeScale;
 
             int ticksThisFrame = 0;
             while (accumulator >= tickInterval && ticksThisFrame < MaxTicksPerFrame)

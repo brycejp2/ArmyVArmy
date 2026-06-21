@@ -12,6 +12,7 @@ namespace ArmyVArmy.Sim
         public readonly Vector2[] Positions;
         public readonly Vector2[] PrevPositions;
         public readonly float[] Health;
+        public readonly float[] MaxHealth;
         public readonly float[] Armor;
         public readonly float[] AttackDamage;
         public readonly float[] AttackRange;
@@ -33,8 +34,17 @@ namespace ArmyVArmy.Sim
 
         public ProjectilePool Projectiles { get; }
 
+        // Army-wide stances (Charge/Brace, ...), one slot per team.
+        public readonly CommandDef[] ActiveCommand = new CommandDef[2];
+        public readonly float[] CommandRemaining = new float[2];
+
         readonly SpatialGrid grid;
         readonly Vector2[] teamCentroid = new Vector2[2];
+
+        const int MaxTrackedAbilities = 8;
+        readonly AbilityDef[] cooldownAbilities = new AbilityDef[MaxTrackedAbilities];
+        readonly float[] cooldownRemaining = new float[MaxTrackedAbilities];
+        int cooldownCount;
 
         const float SeparationRadius = 0.5f;
         const float SeparationStrength = 2.5f;
@@ -49,6 +59,7 @@ namespace ArmyVArmy.Sim
             Positions = new Vector2[capacity];
             PrevPositions = new Vector2[capacity];
             Health = new float[capacity];
+            MaxHealth = new float[capacity];
             Armor = new float[capacity];
             AttackDamage = new float[capacity];
             AttackRange = new float[capacity];
@@ -72,6 +83,7 @@ namespace ArmyVArmy.Sim
             Positions[index] = position;
             PrevPositions[index] = position;
             Health[index] = def.Health;
+            MaxHealth[index] = def.Health;
             Armor[index] = def.Armor;
             AttackDamage[index] = def.Damage;
             AttackRange[index] = def.AttackRange;
@@ -90,10 +102,79 @@ namespace ArmyVArmy.Sim
             return index;
         }
 
+        public void IssueCommand(int team, CommandDef command)
+        {
+            ActiveCommand[team] = command;
+            CommandRemaining[team] = command.Duration;
+        }
+
+        public bool IsCommandActive(int team, CommandDef command)
+        {
+            return ActiveCommand[team] == command && CommandRemaining[team] > 0f;
+        }
+
+        public bool TryCastAbility(AbilityDef ability, Vector2 position, int casterTeam)
+        {
+            int slot = FindOrAddCooldownSlot(ability);
+            if (cooldownRemaining[slot] > 0f)
+                return false;
+
+            ApplyAbilityEffect(ability, position, casterTeam);
+            cooldownRemaining[slot] = ability.Cooldown;
+            return true;
+        }
+
+        public float GetAbilityCooldownRemaining(AbilityDef ability)
+        {
+            for (int i = 0; i < cooldownCount; i++)
+                if (cooldownAbilities[i] == ability)
+                    return Mathf.Max(0f, cooldownRemaining[i]);
+            return 0f;
+        }
+
+        int FindOrAddCooldownSlot(AbilityDef ability)
+        {
+            for (int i = 0; i < cooldownCount; i++)
+                if (cooldownAbilities[i] == ability)
+                    return i;
+
+            int slot = cooldownCount++;
+            cooldownAbilities[slot] = ability;
+            cooldownRemaining[slot] = 0f;
+            return slot;
+        }
+
+        void ApplyAbilityEffect(AbilityDef ability, Vector2 position, int casterTeam)
+        {
+            for (int i = 0; i < UnitCount; i++)
+            {
+                if (!Alive[i])
+                    continue;
+
+                bool isAlly = Team[i] == casterTeam;
+                if (ability.Effect == AbilityEffect.Damage && isAlly)
+                    continue;
+                if (ability.Effect == AbilityEffect.Heal && !isAlly)
+                    continue;
+
+                float distSq = (Positions[i] - position).sqrMagnitude;
+                if (distSq > ability.Radius * ability.Radius)
+                    continue;
+
+                if (ability.Effect == AbilityEffect.Damage)
+                    ApplyDamage(i, ability.Magnitude);
+                else
+                    Health[i] = Mathf.Min(MaxHealth[i], Health[i] + ability.Magnitude);
+            }
+        }
+
         public void Tick(float dt)
         {
             if (IsFinished)
                 return;
+
+            UpdateAbilityCooldowns(dt);
+            UpdateCommands(dt);
 
             System.Array.Copy(Positions, PrevPositions, UnitCount);
 
@@ -105,6 +186,26 @@ namespace ArmyVArmy.Sim
             CheckWinLose();
 
             tickCounter++;
+        }
+
+        void UpdateAbilityCooldowns(float dt)
+        {
+            for (int i = 0; i < cooldownCount; i++)
+                if (cooldownRemaining[i] > 0f)
+                    cooldownRemaining[i] -= dt;
+        }
+
+        void UpdateCommands(float dt)
+        {
+            for (int t = 0; t < 2; t++)
+            {
+                if (CommandRemaining[t] <= 0f)
+                    continue;
+
+                CommandRemaining[t] -= dt;
+                if (CommandRemaining[t] <= 0f)
+                    ActiveCommand[t] = null;
+            }
         }
 
         void ComputeTeamCentroids()
@@ -193,29 +294,36 @@ namespace ArmyVArmy.Sim
                 if (!Alive[i])
                     continue;
 
+                CommandDef command = ActiveCommand[Team[i]];
+                bool holdPosition = command != null && command.HoldPosition;
+                float moveSpeedMult = command != null ? command.MoveSpeedMultiplier : 1f;
+
                 Vector2 pos = Positions[i];
                 Vector2 desired = Vector2.zero;
-                int target = TargetIndex[i];
 
-                if (target >= 0)
+                if (!holdPosition)
                 {
-                    Vector2 toTarget = Positions[target] - pos;
-                    float distance = toTarget.magnitude;
+                    int target = TargetIndex[i];
+                    if (target >= 0)
+                    {
+                        Vector2 toTarget = Positions[target] - pos;
+                        float distance = toTarget.magnitude;
 
-                    if (distance < MinEngageRange[i])
-                        desired = -toTarget.normalized;
-                    else if (distance > AttackRange[i])
-                        desired = toTarget.normalized;
-                }
-                else
-                {
-                    Vector2 toCentroid = teamCentroid[1 - Team[i]] - pos;
-                    if (toCentroid.sqrMagnitude > 0.01f)
-                        desired = toCentroid.normalized;
+                        if (distance < MinEngageRange[i])
+                            desired = -toTarget.normalized;
+                        else if (distance > AttackRange[i])
+                            desired = toTarget.normalized;
+                    }
+                    else
+                    {
+                        Vector2 toCentroid = teamCentroid[1 - Team[i]] - pos;
+                        if (toCentroid.sqrMagnitude > 0.01f)
+                            desired = toCentroid.normalized;
+                    }
                 }
 
                 Vector2 separation = ComputeSeparation(i, pos);
-                Vector2 velocity = desired * MoveSpeed[i] + separation * SeparationStrength;
+                Vector2 velocity = desired * MoveSpeed[i] * moveSpeedMult + separation * SeparationStrength;
                 Positions[i] = pos + velocity * dt;
             }
         }
@@ -278,16 +386,20 @@ namespace ArmyVArmy.Sim
                 AttackCooldown[i] = AttackInterval[i];
                 AttackFlashTimer[i] = AttackFlashDuration;
 
+                CommandDef attackerCommand = ActiveCommand[Team[i]];
+                float damageMult = attackerCommand != null ? attackerCommand.DamageMultiplier : 1f;
+                float effectiveDamage = AttackDamage[i] * damageMult;
+
                 if (ProjectileSpeed[i] > 0f)
                 {
                     Vector2 targetVelocity = dt > 0f ? (Positions[target] - PrevPositions[target]) / dt : Vector2.zero;
                     float leadTime = distance / ProjectileSpeed[i];
                     Vector2 aimPoint = Positions[target] + targetVelocity * leadTime;
-                    Projectiles.Spawn(Positions[i], aimPoint, target, AttackDamage[i], ProjectileSpeed[i]);
+                    Projectiles.Spawn(Positions[i], aimPoint, target, effectiveDamage, ProjectileSpeed[i]);
                 }
                 else
                 {
-                    ApplyDamage(target, AttackDamage[i]);
+                    ApplyDamage(target, effectiveDamage);
                 }
             }
 
@@ -301,7 +413,10 @@ namespace ArmyVArmy.Sim
 
         void ApplyDamage(int targetIndex, float damageAmount)
         {
-            Health[targetIndex] -= DamageModel.ResolveDamage(damageAmount, Armor[targetIndex]);
+            CommandDef targetCommand = ActiveCommand[Team[targetIndex]];
+            float armorMult = targetCommand != null ? targetCommand.ArmorMultiplier : 1f;
+
+            Health[targetIndex] -= DamageModel.ResolveDamage(damageAmount, Armor[targetIndex] * armorMult);
 
             if (Health[targetIndex] <= 0f && Alive[targetIndex])
             {
