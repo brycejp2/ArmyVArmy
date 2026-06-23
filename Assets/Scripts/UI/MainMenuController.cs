@@ -1,4 +1,5 @@
 using ArmyVArmy.Core;
+using ArmyVArmy.Save;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -12,11 +13,11 @@ namespace ArmyVArmy.UI
 
         void Start()
         {
-            // No save system until the meta loop ships (Phase 5), so there is never a run to continue yet.
-            continueButton.interactable = false;
+            continueButton.interactable = SaveService.HasSave();
         }
 
         public void OnNewRun() => gameManager.StartNewRun();
+        public void OnContinue() => gameManager.ContinueRun();
         public void OnOpenSettings() => settingsPanel.SetActive(true);
         public void OnQuit() => gameManager.QuitGame();
     }

@@ -77,14 +77,14 @@ namespace ArmyVArmy.Sim
             Projectiles = new ProjectilePool(256);
         }
 
-        public int SpawnUnit(Vector2 position, int team, UnitDef def)
+        public int SpawnUnit(Vector2 position, int team, UnitDef def, float? currentHealthOverride = null, float armorBonus = 0f)
         {
             int index = UnitCount;
             Positions[index] = position;
             PrevPositions[index] = position;
-            Health[index] = def.Health;
             MaxHealth[index] = def.Health;
-            Armor[index] = def.Armor;
+            Health[index] = currentHealthOverride ?? def.Health;
+            Armor[index] = def.Armor + armorBonus;
             AttackDamage[index] = def.Damage;
             AttackRange[index] = def.AttackRange;
             AttackInterval[index] = def.AttackInterval;

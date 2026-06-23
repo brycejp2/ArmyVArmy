@@ -1,4 +1,7 @@
+using System.Collections.Generic;
+using ArmyVArmy.Core;
 using ArmyVArmy.Data;
+using ArmyVArmy.Save;
 using ArmyVArmy.Units;
 using UnityEngine;
 
@@ -6,8 +9,11 @@ namespace ArmyVArmy.Sim
 {
     // Scene-level driver: owns the BattleSimulation and its pooled UnitViews/projectile views,
     // advances the sim on a fixed tick independent of frame rate, and interpolates views between
-    // ticks. Spawns a small mixed-type formation per side so the three unit types' distinct
-    // behavior (ranged kite, melee close, spears hold) is easy to watch.
+    // ticks. The player's side spawns from GameManager.CurrentRun (roster/formation/upgrades/
+    // wounds) when available, falling back to a fixed test formation when the scene is played
+    // directly without going through Main Menu -> Meta Hub first. Once the battle ends, applies
+    // the result to RunState (gold + surviving wounds on a win, permadeath on a loss) exactly
+    // once - BattleResolutionController just reads BattleEnded/PlayerWon to show a result screen.
     public class BattleSimulationRunner : MonoBehaviour
     {
         public const int PlayerTeam = 0;
@@ -15,6 +21,10 @@ namespace ArmyVArmy.Sim
         [SerializeField] UnitDef swordsmanDef;
         [SerializeField] UnitDef spearmanDef;
         [SerializeField] UnitDef archerDef;
+
+        [SerializeField] UpgradeDef swordsmanArmorUpgrade;
+        [SerializeField] UpgradeDef spearmanArmorUpgrade;
+        [SerializeField] UpgradeDef archerArmorUpgrade;
 
         [SerializeField] int meleePerTypePerSide = 20;
         [SerializeField] int archersPerSide = 10;
@@ -34,15 +44,25 @@ namespace ArmyVArmy.Sim
         const int MaxTicksPerFrame = 5;
         const int ProjectileViewCapacity = 256;
 
+        const int VictoryGoldReward = 50;
+        const int EnemyMeleeScalePerNode = 2;
+        const int EnemyArcherScalePerNode = 1;
+        const int MaxScalingNodes = 10;
+
         BattleSimulation sim;
         UnitView[] views;
+        RosterUnit[] simIndexToRosterUnit;
         Transform[] projectileViews;
         Camera cam;
         float tickInterval;
         float accumulator;
+        bool resultApplied;
 
         public Camera BattleCamera => cam;
         public float TimeScale { get; set; } = 1f;
+
+        public bool BattleEnded => sim.IsFinished;
+        public bool PlayerWon => sim.WinningTeam == PlayerTeam;
 
         public bool TryCastAbility(AbilityDef ability, Vector2 worldPosition) =>
             sim.TryCastAbility(ability, worldPosition, PlayerTeam);
@@ -58,14 +78,72 @@ namespace ArmyVArmy.Sim
             cam = Camera.main;
             tickInterval = 1f / tickRate;
 
-            int capacity = (meleePerTypePerSide * 2 + archersPerSide) * 2;
+            RunState run = GameManager.Instance != null ? GameManager.Instance.CurrentRun : null;
+            int nodeIndex = run != null ? Mathf.Min(run.NodeIndex, MaxScalingNodes) : 0;
+            int enemyMelee = meleePerTypePerSide + nodeIndex * EnemyMeleeScalePerNode;
+            int enemyArchers = archersPerSide + nodeIndex * EnemyArcherScalePerNode;
+            int enemyCount = enemyMelee * 2 + enemyArchers;
+            int playerCount = run != null ? run.Roster.Count : meleePerTypePerSide * 2 + archersPerSide;
+            int capacity = playerCount + enemyCount;
+
             sim = new BattleSimulation(capacity, WorldWidth, WorldHeight, WorldOriginX, WorldOriginY, CellSize);
+            simIndexToRosterUnit = new RosterUnit[capacity];
 
             BuildUnitViewPool(capacity);
             BuildProjectileViewPool();
 
-            SpawnArmy(0, new Vector2(-15f, 0f), facing: 1f, team0Color);
-            SpawnArmy(1, new Vector2(15f, 0f), facing: -1f, team1Color);
+            if (run != null)
+                SpawnPlayerArmyFromRunState(run, new Vector2(-15f, 0f));
+            else
+                SpawnArmy(0, new Vector2(-15f, 0f), facing: 1f, team0Color, meleePerTypePerSide, archersPerSide);
+
+            SpawnArmy(1, new Vector2(15f, 0f), facing: -1f, team1Color, enemyMelee, enemyArchers);
+        }
+
+        void SpawnPlayerArmyFromRunState(RunState run, Vector2 armyCenter)
+        {
+            foreach (RosterUnit unit in run.Roster)
+            {
+                if (unit.FormationSlot < 0 || unit.CurrentHealth <= 0f)
+                    continue;
+
+                UnitDef def = FindDef(unit.UnitDefName);
+                if (def == null)
+                    continue;
+
+                Vector2 pos = armyCenter + FormationGrid.SlotToWorldOffset(unit.FormationSlot);
+                float armorBonus = GetArmorBonus(run, def);
+
+                int index = sim.SpawnUnit(pos, PlayerTeam, def, unit.CurrentHealth, armorBonus);
+                simIndexToRosterUnit[index] = unit;
+                views[index].Initialize(def.Shape, team0Color * TintFor(def));
+                views[index].transform.position = pos;
+            }
+        }
+
+        UnitDef FindDef(string unitDefName)
+        {
+            if (swordsmanDef.DisplayName == unitDefName) return swordsmanDef;
+            if (spearmanDef.DisplayName == unitDefName) return spearmanDef;
+            if (archerDef.DisplayName == unitDefName) return archerDef;
+            return null;
+        }
+
+        float GetArmorBonus(RunState run, UnitDef def)
+        {
+            UpgradeDef upgrade = def == swordsmanDef ? swordsmanArmorUpgrade
+                : def == spearmanDef ? spearmanArmorUpgrade
+                : def == archerDef ? archerArmorUpgrade
+                : null;
+
+            return upgrade != null ? upgrade.ArmorBonusPerLevel * run.GetUpgradeLevel(upgrade.DisplayName) : 0f;
+        }
+
+        Color TintFor(UnitDef def)
+        {
+            if (def == spearmanDef) return SpearmanTint;
+            if (def == archerDef) return ArcherTint;
+            return SwordsmanTint;
         }
 
         void BuildUnitViewPool(int capacity)
@@ -96,14 +174,14 @@ namespace ArmyVArmy.Sim
             }
         }
 
-        void SpawnArmy(int team, Vector2 frontCenter, float facing, Color color)
+        void SpawnArmy(int team, Vector2 frontCenter, float facing, Color color, int meleeCount, int archerCount)
         {
             // Front two rows hold the melee line (spearmen first - longest reach); archers sit
             // further back so they get to fire before the melee line closes. Each type gets a
             // small tint on top of the team color - shape alone reads thin at battle zoom.
-            SpawnRow(team, spearmanDef, meleePerTypePerSide, frontCenter, facing, rowIndex: 0, color * SpearmanTint);
-            SpawnRow(team, swordsmanDef, meleePerTypePerSide, frontCenter, facing, rowIndex: 1, color * SwordsmanTint);
-            SpawnRow(team, archerDef, archersPerSide, frontCenter, facing, rowIndex: 3, color * ArcherTint);
+            SpawnRow(team, spearmanDef, meleeCount, frontCenter, facing, rowIndex: 0, color * SpearmanTint);
+            SpawnRow(team, swordsmanDef, meleeCount, frontCenter, facing, rowIndex: 1, color * SwordsmanTint);
+            SpawnRow(team, archerDef, archerCount, frontCenter, facing, rowIndex: 3, color * ArcherTint);
         }
 
         static readonly Color SwordsmanTint = Color.white;
@@ -143,6 +221,47 @@ namespace ArmyVArmy.Sim
             float t = accumulator / tickInterval;
             SyncUnitViews(t);
             SyncProjectileViews();
+
+            if (sim.IsFinished && !resultApplied)
+            {
+                resultApplied = true;
+                ApplyBattleResult();
+            }
+        }
+
+        void ApplyBattleResult()
+        {
+            RunState run = GameManager.Instance != null ? GameManager.Instance.CurrentRun : null;
+            if (run == null)
+                return;
+
+            ApplyBattleResultTo(run);
+        }
+
+        void ApplyBattleResultTo(RunState run)
+        {
+            if (PlayerWon)
+            {
+                var survivors = new List<RosterUnit>();
+                for (int i = 0; i < sim.UnitCount; i++)
+                {
+                    RosterUnit rosterUnit = simIndexToRosterUnit[i];
+                    if (rosterUnit == null || !sim.Alive[i])
+                        continue;
+
+                    rosterUnit.CurrentHealth = sim.Health[i];
+                    survivors.Add(rosterUnit);
+                }
+
+                run.Roster = survivors;
+                run.Gold += VictoryGoldReward;
+                run.NodeIndex++;
+                SaveService.Save(run);
+            }
+            else
+            {
+                SaveService.DeleteSave();
+            }
         }
 
         void SyncUnitViews(float t)

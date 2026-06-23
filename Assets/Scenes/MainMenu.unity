@@ -302,6 +302,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1bb0c05a0fddff44f8833031210819e1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  swordsmanDef: {fileID: 11400000, guid: 44b6f46eb079da04d94abafc517a715c, type: 2}
+  spearmanDef: {fileID: 11400000, guid: 830ef898d7b365645bdbdfa5fe3b87ac, type: 2}
+  archerDef: {fileID: 11400000, guid: d1c3df917f3162946ae2c90146622b01, type: 2}
 --- !u!4 &81883845
 Transform:
   m_ObjectHideFlags: 0
@@ -380,7 +383,19 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 97585012}
   m_OnClick:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 2117158740}
+        m_TargetAssemblyTypeName: ArmyVArmy.UI.MainMenuController, Assembly-CSharp
+        m_MethodName: OnContinue
+        m_Mode: 0
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!114 &97585012
 MonoBehaviour:
   m_ObjectHideFlags: 0
